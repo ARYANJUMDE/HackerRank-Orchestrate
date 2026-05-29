@@ -12,6 +12,7 @@ import {
   Tag,
   HelpCircle
 } from "lucide-react";
+import corpusData from "../corpus.json";
 
 interface Article {
   path: string;
@@ -36,13 +37,17 @@ export default function KnowledgeBase({ onLoadToSandbox }: KnowledgeBaseProps) {
 
   useEffect(() => {
     fetch("/api/kb")
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error("Offline");
+        return res.json();
+      })
       .then(data => {
         setArticles(data);
         setIsLoading(false);
       })
       .catch(err => {
-        console.error("Error fetching KB:", err);
+        console.warn("Backend KB offline. Falling back to built static documentation corpus.");
+        setArticles(corpusData as Article[]);
         setIsLoading(false);
       });
   }, []);

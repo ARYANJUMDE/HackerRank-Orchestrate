@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+// Unified browser-safe Support Engine (no node fs/path imports)
 
 // Translating code/config.py
 export const INTENT_KEYWORDS = {
@@ -467,8 +466,16 @@ export function generateResponse(query: string, docs: Document[], escalate: bool
 // Full Process Logic replicating main.py process_ticket
 export function getProductArea(docPath: string, corpusPath: string = "data"): string {
   try {
-    const rel = path.relative(path.resolve(corpusPath), path.resolve(docPath));
-    const parts = rel.replace(/\\/g, "/").split("/");
+    let rel = docPath.replace(/\\/g, "/");
+    const normalizedCorpus = corpusPath.replace(/\\/g, "/");
+    if (rel.includes(normalizedCorpus)) {
+      const idx = rel.indexOf(normalizedCorpus);
+      rel = rel.substring(idx + normalizedCorpus.length);
+    }
+    if (rel.startsWith("/")) {
+      rel = rel.substring(1);
+    }
+    const parts = rel.split("/");
 
     const areaMap: Record<string, string> = {
       "screen": "Assessments & Screening",
@@ -569,3 +576,72 @@ export function processTicket(item: { Issue: string; Subject: string; Company: s
     docsFound: docs.length
   };
 }
+
+// Shareable robust CSV parser designed to handle embedded newlines in double-quoted fields
+export function parseCSV(content: string): any[] {
+  const results: string[][] = [];
+  let row: string[] = [];
+  let currentField = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+    const nextChar = content[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        i++; // skip escaped quote character
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      row.push(currentField);
+      currentField = "";
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++; // Skip LF in CRLF pair
+      }
+      row.push(currentField);
+      currentField = "";
+      
+      // Only push rows that have some content
+      if (row.length > 0 && row.some(cell => cell.trim() !== "")) {
+        results.push(row);
+      }
+      row = [];
+    } else {
+      currentField += char;
+    }
+  }
+
+  if (currentField !== "" || row.length > 0) {
+    row.push(currentField);
+    if (row.some(cell => cell.trim() !== "")) {
+      results.push(row);
+    }
+  }
+
+  if (results.length === 0) return [];
+
+  const headers = results[0].map(h => h.trim().toLowerCase());
+  const parsedRows: any[] = [];
+
+  for (let i = 1; i < results.length; i++) {
+    const values = results[i];
+    const obj: any = {};
+    
+    headers.forEach((h, idx) => {
+      const val = values[idx] || "";
+      if (h === "issue") obj.Issue = val;
+      else if (h === "subject") obj.Subject = val;
+      else if (h === "company") obj.Company = val;
+      else obj[h] = val;
+    });
+    
+    parsedRows.push(obj);
+  }
+
+  return parsedRows;
+}
+

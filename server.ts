@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import { createServer as createViteServer } from "vite";
-import { Retriever, processTicket, getProductArea } from "./src/engine.js";
+import { Retriever, processTicket, getProductArea, parseCSV } from "./src/engine.js";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 
@@ -59,74 +59,6 @@ async function startServer() {
   }
 
   loadCorpus();
-
-  // Helper: robust CSV parser designed to handle embedded newlines in double-quoted fields
-  function parseCSV(content: string) {
-    const results: string[][] = [];
-    let row: string[] = [];
-    let currentField = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < content.length; i++) {
-      const char = content[i];
-      const nextChar = content[i + 1];
-
-      if (char === '"') {
-        if (inQuotes && nextChar === '"') {
-          currentField += '"';
-          i++; // skip escaped quote character
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        row.push(currentField);
-        currentField = "";
-      } else if ((char === '\n' || char === '\r') && !inQuotes) {
-        if (char === '\r' && nextChar === '\n') {
-          i++; // Skip LF in CRLF pair
-        }
-        row.push(currentField);
-        currentField = "";
-        
-        // Only push rows that have some content
-        if (row.length > 0 && row.some(cell => cell.trim() !== "")) {
-          results.push(row);
-        }
-        row = [];
-      } else {
-        currentField += char;
-      }
-    }
-
-    if (currentField !== "" || row.length > 0) {
-      row.push(currentField);
-      if (row.some(cell => cell.trim() !== "")) {
-        results.push(row);
-      }
-    }
-
-    if (results.length === 0) return [];
-
-    const headers = results[0].map(h => h.trim().toLowerCase());
-    const parsedRows: any[] = [];
-
-    for (let i = 1; i < results.length; i++) {
-      const values = results[i];
-      const obj: any = {};
-      
-      headers.forEach((h, idx) => {
-        const val = values[idx] || "";
-        if (h === "issue") obj.Issue = val;
-        else if (h === "subject") obj.Subject = val;
-        else if (h === "company") obj.Company = val;
-        else obj[h] = val;
-      });
-      
-      parsedRows.push(obj);
-    }
-
-    return parsedRows;
-  }
 
   // Helper: CSV output writer
   function writeCSV(filePath: string, results: any[]) {

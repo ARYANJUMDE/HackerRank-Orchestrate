@@ -24,6 +24,10 @@ import {
 } from "lucide-react";
 import { TICKET_SAMPLES, TicketSample } from "./samples.js";
 import KnowledgeBase from "./components/KnowledgeBase.js";
+import corpusData from "./corpus.json";
+import { Retriever, processTicket, parseCSV } from "./engine.js";
+// @ts-ignore
+import rawTicketsCSV from "../support_tickets/support_tickets.csv?raw";
 
 interface TicketResult {
   issue: string;
@@ -74,17 +78,106 @@ export default function App() {
   const [selectedTicket, setSelectedTicket] = useState<TicketResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initial Data Fetching
+  // Standalone/Offline Fallback State
+  const [isClientOnlyMode, setIsClientOnlyMode] = useState(false);
+  const [fallbackRetriever, setFallbackRetriever] = useState<Retriever | null>(null);
+
+  // Setup Browser-side core engine on load
+  useEffect(() => {
+    try {
+      const docPairs: [string, string][] = corpusData.map((art: any) => [art.content, art.path]);
+      const retriever = new Retriever(docPairs);
+      setFallbackRetriever(retriever);
+    } catch (e) {
+      console.error("Failed to initialize client-side fallback retriever:", e);
+    }
+  }, []);
+
+  // Process sample dataset client-side in browser
+  const processCSVClientSide = (retrieverInstance: Retriever) => {
+    if (!retrieverInstance) return;
+    try {
+      const tickets = parseCSV(rawTicketsCSV);
+      const resultsArray: TicketResult[] = [];
+      
+      tickets.forEach(ticket => {
+        const payload = {
+          Issue: ticket.Issue || ticket.issue || "",
+          Subject: ticket.Subject || ticket.subject || "",
+          Company: ticket.Company || ticket.company || ""
+        };
+        const outcome = processTicket(payload, retrieverInstance, "data");
+        if (outcome) {
+          resultsArray.push({
+            issue: outcome.issue,
+            subject: outcome.subject,
+            company: outcome.company,
+            response: outcome.response,
+            product_area: outcome.productArea,
+            status: outcome.status,
+            request_type: outcome.requestType,
+            justification: outcome.justification
+          });
+        }
+      });
+      
+      setResults(resultsArray);
+      
+      const total = resultsArray.length;
+      const byCompany: Record<string, number> = {};
+      const byStatus = { replied: 0, escalated: 0 };
+      const byRequestType: Record<string, number> = {};
+
+      resultsArray.forEach(r => {
+        const comp = r.company || "Unknown";
+        byCompany[comp] = (byCompany[comp] || 0) + 1;
+        const stat = (r.status || "").toLowerCase() as "replied" | "escalated";
+        if (stat === "replied" || stat === "escalated") {
+          byStatus[stat] = (byStatus[stat] || 0) + 1;
+        }
+        const rt = r.request_type || "unknown";
+        byRequestType[rt] = (byRequestType[rt] || 0) + 1;
+      });
+
+      setStats({
+        total,
+        by_company: byCompany,
+        by_status: byStatus,
+        by_request_type: byRequestType,
+        escalation_rate: total ? Math.round((byStatus.escalated / total) * 100 * 10) / 10 : 0,
+        doc_count: corpusData.length
+      });
+    } catch (e) {
+      console.error("Error executing browser-side RAG pipelines:", e);
+    }
+  };
+
+  // Switch to client-side data immediately when client modes activate
+  useEffect(() => {
+    if (isClientOnlyMode && fallbackRetriever && results.length === 0) {
+      processCSVClientSide(fallbackRetriever);
+    }
+  }, [isClientOnlyMode, fallbackRetriever]);
+
+  // Initial Data Fetching from server with offline automatic fallback
   const fetchAllData = async () => {
     try {
       const [resStats, resResults] = await Promise.all([
-        fetch("/api/stats").then(r => r.json()),
-        fetch("/api/results").then(r => r.json())
+        fetch("/api/stats").then(r => {
+          if (!r.ok) throw new Error("Offline");
+          return r.json();
+        }),
+        fetch("/api/results").then(r => {
+          if (!r.ok) throw new Error("Offline");
+          return r.json();
+        })
       ]);
       setStats(resStats);
       setResults(resResults);
+      setIsClientOnlyMode(false);
     } catch (err) {
-      console.error("Error loading framework dataset:", err);
+      console.warn("Backend API offline (Static build / Vercel detected). Activating high-performance browser-side triage fallback.");
+      setIsClientOnlyMode(true);
     }
   };
 
@@ -97,7 +190,6 @@ export default function App() {
     setSubject(sample.subject);
     setIssue(sample.issue);
     setCompany(sample.company === "None" ? "" : sample.company);
-    // clear prior single-run results to focus on the new one
     setOrchestrationResult(null);
   };
 
@@ -109,6 +201,66 @@ export default function App() {
     setIsProcessing(true);
     setOrchestrationResult(null);
 
+    // Browser-side fallback logic
+    if (isClientOnlyMode && fallbackRetriever) {
+      setTimeout(() => {
+        try {
+          const outcome = processTicket({ Issue: issue, Subject: subject, Company: company }, fallbackRetriever, "data");
+          if (!outcome) throw new Error("Triage failed");
+          
+          const resultItem = {
+            issue: outcome.issue,
+            subject: outcome.subject,
+            company: outcome.company,
+            response: outcome.response,
+            product_area: outcome.productArea,
+            status: outcome.status,
+            request_type: outcome.requestType,
+            justification: outcome.justification
+          };
+          
+          setOrchestrationResult(outcome);
+          
+          setResults(prev => {
+            const updated = [resultItem, ...prev];
+            const total = updated.length;
+            const byCompany: Record<string, number> = {};
+            const byStatus = { replied: 0, escalated: 0 };
+            const byRequestType: Record<string, number> = {};
+
+            updated.forEach(r => {
+              const comp = r.company || "Unknown";
+              byCompany[comp] = (byCompany[comp] || 0) + 1;
+              const stat = (r.status || "").toLowerCase() as "replied" | "escalated";
+              if (stat === "replied" || stat === "escalated") {
+                byStatus[stat] = (byStatus[stat] || 0) + 1;
+              }
+              const rt = r.request_type || "unknown";
+              byRequestType[rt] = (byRequestType[rt] || 0) + 1;
+            });
+
+            setStats({
+              total,
+              by_company: byCompany,
+              by_status: byStatus,
+              by_request_type: byRequestType,
+              escalation_rate: total ? Math.round((byStatus.escalated / total) * 100 * 10) / 10 : 0,
+              doc_count: corpusData.length
+            });
+
+            return updated;
+          });
+        } catch (err) {
+          console.error(err);
+          alert("Error processing ticket client-side.");
+        } finally {
+          setIsProcessing(false);
+        }
+      }, 350);
+      return;
+    }
+
+    // Normal backend processing
     try {
       const res = await fetch("/api/process/ticket", {
         method: "POST",
@@ -122,8 +274,6 @@ export default function App() {
 
       const outcome = await res.json();
       setOrchestrationResult(outcome);
-      
-      // reload logs and statistics in background to sync
       fetchAllData();
     } catch (err) {
       console.error(err);
@@ -137,6 +287,24 @@ export default function App() {
   const handleReprocess = async () => {
     if (isReprocessing) return;
     setIsReprocessing(true);
+
+    if (isClientOnlyMode && fallbackRetriever) {
+      setTimeout(() => {
+        processCSVClientSide(fallbackRetriever);
+        setIsReprocessing(false);
+        
+        const container = document.getElementById("root");
+        if (container) {
+          const alertDiv = document.createElement("div");
+          alertDiv.className = "fixed bottom-5 right-5 z-[100] bg-cyan-400 text-neutral-950 px-4 py-2.5 rounded-lg text-xs font-bold shadow-2xl flex items-center gap-2 border border-cyan-400/30 animate-bounce";
+          alertDiv.innerHTML = "<span>⚙️ Client Pipeline Executed Successfully!</span>";
+          container.appendChild(alertDiv);
+          setTimeout(() => alertDiv.remove(), 2500);
+        }
+      }, 600);
+      return;
+    }
+
     try {
       const res = await fetch("/api/reprocess", { method: "POST" });
       if (!res.ok) throw new Error("Reprocess output failed");
@@ -155,6 +323,76 @@ export default function App() {
     if (!file) return;
 
     setIsUploading(true);
+
+    if (isClientOnlyMode && fallbackRetriever) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const content = event.target?.result as string;
+          const tickets = parseCSV(content);
+          const resultsArray: TicketResult[] = [];
+          
+          tickets.forEach(ticket => {
+            const payload = {
+              Issue: ticket.Issue || ticket.issue || "",
+              Subject: ticket.Subject || ticket.subject || "",
+              Company: ticket.Company || ticket.company || ""
+            };
+            const outcome = processTicket(payload, fallbackRetriever, "data");
+            if (outcome) {
+              resultsArray.push({
+                issue: outcome.issue,
+                subject: outcome.subject,
+                company: outcome.company,
+                response: outcome.response,
+                product_area: outcome.productArea,
+                status: outcome.status,
+                request_type: outcome.requestType,
+                justification: outcome.justification
+              });
+            }
+          });
+
+          setResults(resultsArray);
+          
+          const total = resultsArray.length;
+          const byCompany: Record<string, number> = {};
+          const byStatus = { replied: 0, escalated: 0 };
+          const byRequestType: Record<string, number> = {};
+
+          resultsArray.forEach(r => {
+            const comp = r.company || "Unknown";
+            byCompany[comp] = (byCompany[comp] || 0) + 1;
+            const stat = (r.status || "").toLowerCase() as "replied" | "escalated";
+            if (stat === "replied" || stat === "escalated") {
+              byStatus[stat] = (byStatus[stat] || 0) + 1;
+            }
+            const rt = r.request_type || "unknown";
+            byRequestType[rt] = (byRequestType[rt] || 0) + 1;
+          });
+
+          setStats({
+            total,
+            by_company: byCompany,
+            by_status: byStatus,
+            by_request_type: byRequestType,
+            escalation_rate: total ? Math.round((byStatus.escalated / total) * 100 * 10) / 10 : 0,
+            doc_count: corpusData.length
+          });
+
+          alert(`Successfully parsed file using browser engine: ${resultsArray.length} tickets categorized.`);
+        } catch (err) {
+          console.error(err);
+          alert("Failed to parse CSV file on browser side.");
+        } finally {
+          setIsUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+      };
+      reader.readAsText(file);
+      return;
+    }
+
     const formData = new FormData();
     formData.append("file", file);
 
@@ -211,8 +449,10 @@ export default function App() {
         {/* Connection status pills */}
         <div className="flex items-center gap-4 text-xs">
           <div className="hidden md:flex items-center gap-2 bg-neutral-900 px-3 py-1.5 rounded-md border border-neutral-800">
-            <span className="w-2.5 h-2.5 rounded-full bg-brand-hr animate-ping" />
-            <span className="text-neutral-300 font-mono text-[11px]">CORPUS STATUS: {stats.doc_count ? `${stats.doc_count} DOCUMENTS LOADED` : "INDEXING..."}</span>
+            <span className={`w-2 h-2 rounded-full ${isClientOnlyMode ? "bg-cyan-400" : "bg-brand-hr"} animate-pulse`} />
+            <span className="text-neutral-300 font-mono text-[10px] tracking-tight">
+              {isClientOnlyMode ? "STANDALONE MODE: BROWSER RAG ACTIVE" : `CORPUS STATUS: ${stats.doc_count ? `${stats.doc_count} DOCS ACTIVE` : "INDEXING..."}`}
+            </span>
           </div>
           
           <button
