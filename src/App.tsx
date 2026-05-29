@@ -152,11 +152,9 @@ export default function App() {
     }
   };
 
-  // Switch to client-side data immediately when client modes activate
+  // Clean initial state, waiting for explicit user interaction/upload or sample processing
   useEffect(() => {
-    if (isClientOnlyMode && fallbackRetriever && results.length === 0) {
-      processCSVClientSide(fallbackRetriever);
-    }
+    // Left purposefully empty to prevent unsolicited auto-population on load, as per user request to ask first
   }, [isClientOnlyMode, fallbackRetriever]);
 
   // Initial Data Fetching from server with offline automatic fallback
@@ -636,148 +634,205 @@ export default function App() {
           </div>
 
           {activeTab === "ledger" && (
-            <div className="bg-neutral-900/40 rounded-xl border border-neutral-900 p-5 flex flex-col h-full">
+            <div className="bg-neutral-900/40 rounded-xl border border-neutral-900 p-5 flex flex-col h-full min-h-[500px]">
               
-              {/* Header with Search and File Upload button */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 pb-3 border-b border-neutral-800">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-cyan-400" />
-                  <h3 className="font-semibold text-sm font-display text-neutral-100">Processed Output Ledger</h3>
-                </div>
+              {results.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 bg-neutral-900/10 border-2 border-dashed border-neutral-800 rounded-xl my-2 text-center select-none animate-fade-in">
+                  <div className="p-4 bg-brand-hr/12 text-brand-hr rounded-full border border-brand-hr/30 mb-5 animate-pulse">
+                    <Upload className="w-8 h-8" />
+                  </div>
+                  
+                  <h3 className="font-bold text-lg text-neutral-100 font-display tracking-tight">Support Ingestion & Triage Ready</h3>
+                  <p className="text-xs text-neutral-400 max-w-lg mt-2 mb-8 leading-relaxed">
+                    HackerRank Orchestrate is fully armed and ready. You can choose to process the pre-configured sample dataset from <code className="text-cyan-400 font-mono bg-neutral-950 px-1.5 py-0.5 rounded text-[10px]/normal">support_tickets.csv</code> directly inside your browser, or upload your own custom Support Tickets CSV dataset.
+                  </p>
+                  
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md">
+                    {/* Hidden input trigger */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      accept=".csv"
+                      className="hidden"
+                    />
+                    
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="w-full sm:w-auto h-11 px-6 rounded-lg bg-cyan-400 hover:bg-cyan-500 text-neutral-950 font-bold text-xs flex items-center justify-center gap-2 select-none transition-all cursor-pointer shadow-lg hover:shadow-cyan-400/10 active:scale-[0.98]"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {isUploading ? "Uploading CSV..." : "Upload Custom Ticket CSV"}
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        if (fallbackRetriever) {
+                          processCSVClientSide(fallbackRetriever);
+                        } else {
+                          alert("Autonomous support engine is initializing, please try again in a moment.");
+                        }
+                      }}
+                      className="w-full sm:w-auto h-11 px-6 rounded-lg bg-neutral-900 hover:bg-neutral-850 text-neutral-200 border border-neutral-800 font-semibold text-xs flex items-center justify-center gap-2 select-none transition-all cursor-pointer active:scale-[0.98]"
+                    >
+                      <RefreshCw className="w-4 h-4 text-brand-hr" />
+                      Classify 58 Default Tickets
+                    </button>
+                  </div>
 
-                {/* Upload trigger */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    accept=".csv"
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-900 text-neutral-300 border border-neutral-800 hover:border-neutral-700 px-3 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer"
-                  >
-                    <Upload className="w-3 h-3 text-cyan-400" />
-                    {isUploading ? "Uploading CSV..." : "Upload Custom Ticket CSV"}
-                  </button>
+                  <div className="mt-10 pt-6 border-t border-neutral-900/80 w-full max-w-md">
+                    <span className="text-[10px] font-mono font-bold tracking-wider text-neutral-500 uppercase block mb-2.5">ACCEPTED INPUT SCHEMA:</span>
+                    <div className="bg-neutral-950/95 py-3 px-4 rounded-lg border border-neutral-850 text-left font-mono text-[11px] text-neutral-300 flex items-center justify-between">
+                      <code className="text-brand-hr select-all">subject, issue, company</code>
+                      <span className="text-[9px] bg-neutral-900 text-neutral-500 px-2 py-0.5 rounded border border-neutral-800 tracking-tight font-sans">Delimited format</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* Header with Search and File Upload button */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 pb-3 border-b border-neutral-800">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-cyan-400" />
+                      <h3 className="font-semibold text-sm font-display text-neutral-100">Processed Output Ledger</h3>
+                    </div>
 
-              {/* Filters Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                {/* Search Query input */}
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-neutral-500">
-                    <Search className="w-3.5 h-3.5" />
-                  </span>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Query search outputs..."
-                    className="w-full text-xs bg-neutral-950 border border-neutral-850 rounded-lg py-2 pl-8 pr-3 focus:outline-none focus:border-neutral-700 text-neutral-200"
-                  />
-                </div>
+                    {/* Upload trigger */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        accept=".csv"
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                        className="flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-900 text-neutral-300 border border-neutral-800 hover:border-neutral-700 px-3 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer"
+                      >
+                        <Upload className="w-3 h-3 text-cyan-400" />
+                        {isUploading ? "Uploading CSV..." : "Upload Custom Ticket CSV"}
+                      </button>
+                    </div>
+                  </div>
 
-                {/* Company select filter */}
-                <div>
-                  <select
-                    value={companyFilter}
-                    onChange={e => setCompanyFilter(e.target.value)}
-                    className="w-full text-xs bg-neutral-950 border border-neutral-850 rounded-lg py-2 px-3 focus:outline-none focus:border-neutral-700 text-neutral-300"
-                  >
-                    <option value="ALL">All Companies</option>
-                    <option value="Claude">Claude</option>
-                    <option value="HackerRank">HackerRank</option>
-                    <option value="Visa">Visa</option>
-                    <option value="None">None (Unclassified)</option>
-                  </select>
-                </div>
+                  {/* Filters Bar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                    {/* Search Query input */}
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-neutral-500">
+                        <Search className="w-3.5 h-3.5" />
+                      </span>
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        placeholder="Query search outputs..."
+                        className="w-full text-xs bg-neutral-950 border border-neutral-850 rounded-lg py-2 pl-8 pr-3 focus:outline-none focus:border-brand-hr text-neutral-200"
+                      />
+                    </div>
 
-                {/* Status filter */}
-                <div>
-                  <select
-                    value={statusFilter}
-                    onChange={e => setStatusFilter(e.target.value)}
-                    className="w-full text-xs bg-neutral-950 border border-neutral-850 rounded-lg py-2 px-3 focus:outline-none focus:border-neutral-700 text-neutral-300"
-                  >
-                    <option value="ALL">All Status Actions</option>
-                    <option value="replied">Replied (Grounded)</option>
-                    <option value="escalated">Escalated (Manual review)</option>
-                  </select>
-                </div>
-              </div>
+                    {/* Company select filter */}
+                    <div>
+                      <select
+                        value={companyFilter}
+                        onChange={e => setCompanyFilter(e.target.value)}
+                        className="w-full text-xs bg-neutral-950 border border-neutral-850 rounded-lg py-2 px-3 focus:outline-none focus:border-brand-hr text-neutral-300"
+                      >
+                        <option value="ALL">All Companies</option>
+                        <option value="Claude">Claude</option>
+                        <option value="HackerRank">HackerRank</option>
+                        <option value="Visa">Visa</option>
+                        <option value="None">None (Unclassified)</option>
+                      </select>
+                    </div>
 
-              {/* Results Table list */}
-              <div className="flex-1 overflow-y-auto max-h-[420px] rounded-lg border border-neutral-950 bg-neutral-960 min-h-[300px]">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-neutral-950 text-neutral-400 uppercase tracking-wider text-[9px] font-mono select-none border-b border-neutral-900 py-2.5 px-3 sticky top-0 z-10">
-                    <tr>
-                      <th className="py-2.5 px-4">Subject & Issue</th>
-                      <th className="py-2.5 px-3">Ecosystem</th>
-                      <th className="py-2.5 px-3">Product Area</th>
-                      <th className="py-2.5 px-3 text-center">Status</th>
-                      <th className="py-2.5 px-4 text-right">Details</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-900/40 divide-dashed">
-                    {filteredResults.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-12 text-center text-neutral-400 text-xs">
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            <Info className="w-5 h-5 text-neutral-600" />
-                            <span>No processed entries match the filters.</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredResults.map((row, idx) => (
-                        <tr 
-                          key={idx}
-                          className="hover:bg-neutral-900/40 transition-colors group"
-                        >
-                          <td className="py-3 px-4 max-w-[220px]">
-                            <div className="font-semibold text-neutral-200 line-clamp-1 group-hover:text-neutral-100">{row.subject}</div>
-                            <div className="text-[10px] text-neutral-400 line-clamp-1 mt-0.5">{row.issue}</div>
-                          </td>
-                          <td className="py-3 px-3">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                              row.company?.toLowerCase() === "claude" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
-                              row.company?.toLowerCase() === "visa" ? "bg-blue-500/10 text-blue-500 border border-blue-500/20" :
-                              row.company?.toLowerCase() === "hackerrank" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
-                              "bg-neutral-800 text-neutral-400"
-                            }`}>
-                              {row.company || "None"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 text-neutral-400 text-[10px] max-w-[120px] truncate">{row.product_area || "General"}</td>
-                          <td className="py-3 px-3 text-center">
-                            <span className={`inline-flex items-center gap-1 text-[9px] font-semibold py-0.5 px-2 rounded-full ${
-                              row.status === "replied" 
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                                : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
-                            }`}>
-                              <span className={`w-1 h-1 rounded-full ${row.status === "replied" ? "bg-emerald-400" : "bg-amber-400"}`} />
-                              {row.status}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => setSelectedTicket(row)}
-                              className="bg-neutral-900 hover:bg-neutral-800 hover:text-neutral-100 text-neutral-400 border border-neutral-800 p-1 rounded transition-all cursor-pointer font-semibold text-[10px] inline-flex items-center gap-0.5"
-                            >
-                              Browse
-                              <ChevronRight className="w-3 h-3" />
-                            </button>
-                          </td>
+                    {/* Status filter */}
+                    <div>
+                      <select
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value)}
+                        className="w-full text-xs bg-neutral-950 border border-neutral-850 rounded-lg py-2 px-3 focus:outline-none focus:border-brand-hr text-neutral-300"
+                      >
+                        <option value="ALL">All Status Actions</option>
+                        <option value="replied">Replied (Grounded)</option>
+                        <option value="escalated">Escalated (Manual review)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Results Table list */}
+                  <div className="flex-1 overflow-y-auto max-h-[420px] rounded-lg border border-neutral-950 bg-neutral-960 min-h-[300px]">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-neutral-950 text-neutral-400 uppercase tracking-wider text-[9px] font-mono select-none border-b border-neutral-900 py-2.5 px-3 sticky top-0 z-10">
+                        <tr>
+                          <th className="py-2.5 px-4">Subject & Issue</th>
+                          <th className="py-2.5 px-3">Ecosystem</th>
+                          <th className="py-2.5 px-3">Product Area</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-4 text-right">Details</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-900/40 divide-dashed flex-1">
+                        {filteredResults.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-12 text-center text-neutral-400 text-xs">
+                              <div className="flex flex-col items-center justify-center gap-2">
+                                <Info className="w-5 h-5 text-neutral-600" />
+                                <span>No processed entries match the filters.</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredResults.map((row, idx) => (
+                            <tr 
+                              key={idx}
+                              className="hover:bg-neutral-900/40 transition-colors group"
+                            >
+                              <td className="py-3 px-4 max-w-[220px]">
+                                <div className="font-semibold text-neutral-200 line-clamp-1 group-hover:text-neutral-100">{row.subject}</div>
+                                <div className="text-[10px] text-neutral-400 line-clamp-1 mt-0.5">{row.issue}</div>
+                              </td>
+                              <td className="py-3 px-3">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                                  row.company?.toLowerCase() === "claude" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
+                                  row.company?.toLowerCase() === "visa" ? "bg-blue-500/10 text-blue-500 border border-blue-500/20" :
+                                  row.company?.toLowerCase() === "hackerrank" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
+                                  "bg-neutral-800 text-neutral-400"
+                                }`}>
+                                  {row.company || "None"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-neutral-400 text-[10px] max-w-[120px] truncate">{row.product_area || "General"}</td>
+                              <td className="py-3 px-3 text-center">
+                                <span className={`inline-flex items-center gap-1 text-[9px] font-semibold py-0.5 px-2 rounded-full ${
+                                  row.status === "replied" 
+                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                                    : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                                }`}>
+                                  <span className={`w-1 h-1 rounded-full ${row.status === "replied" ? "bg-emerald-400" : "bg-amber-400"}`} />
+                                  {row.status}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <button
+                                  onClick={() => setSelectedTicket(row)}
+                                  className="bg-neutral-900 hover:bg-neutral-800 hover:text-neutral-100 text-neutral-400 border border-neutral-800 p-1 rounded transition-all cursor-pointer font-semibold text-[10px] inline-flex items-center gap-0.5 text-xs font-semibold"
+                                >
+                                  Browse
+                                  <ChevronRight className="w-3 h-3" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
 
             </div>
           )}
