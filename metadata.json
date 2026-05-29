@@ -1,0 +1,6 @@
+{
+  "name": "HackerRank Orchestrate",
+  "description": "An agentic AI-powered support agent dashboard that triages, retrieves, and processes customer help tickets across HackerRank, Claude, and Visa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
